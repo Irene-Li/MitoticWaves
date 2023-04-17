@@ -3,10 +3,11 @@ import numpy as np
 from scipy.integrate import ode 
 from numpy.random import MT19937
 from numpy.random import RandomState, SeedSequence
+from tqdm import tqdm
 
 class Kuramoto():
     
-    def __init__(self, epsilon, gamma, sigma, mean_omega, BC="fixed", grad=None):
+    def __init__(self, epsilon, gamma, sigma, mean_omega, BC="PBC", grad=None):
         # Initialises the class with the model parameters 
         self.epsilon = epsilon 
         self.gamma = gamma 
@@ -16,13 +17,13 @@ class Kuramoto():
         if BC == 'grad': 
             self.grad = grad 
         
-    def initialise(self, L, T, n_batches, init=None, seed=None): 
+    def initialise(self, L, T, n_frames, init=None, seed=None): 
         # Set up the simulation parameters 
         self.L = int(L) 
         self.size = int(L)
         self.T = T 
-        self.n_batches = int(n_batches)
-        self.step_size = T/(self.n_batches-1)
+        self.n_frames = int(n_frames)
+        self.step_size = T/float(n_frames)
         if seed is None:
             self.omegas = self.sigma*np.random.normal(size=(L)) + self.mean_omega
         else: 
@@ -33,23 +34,22 @@ class Kuramoto():
         else: 
             self.initial_state = np.zeros((self.L))
 
-    def evolve(self, verbose=False):
+    def evolve(self):
         # The core function that integrates the ODEs forward. 
         
-        self.res = np.zeros((self.n_batches, self.size))
+        self.res = np.zeros((self.n_frames, self.size))
         theta = np.copy(self.initial_state) 
         n = 0 
-        
+
         f = lambda t, x: self._det_rhs(x)
-        r = ode(f).set_integrator('lsoda', rtol=1e-5)
+        r = ode(f).set_integrator('lsoda', rtol=1e-6)
         r.set_initial_value(theta, 0)
 
-        for i in range(self.n_batches):
+        for i in tqdm(range(self.n_frames)):
             if r.successful():
                 self.res[i] = theta
-                if verbose: 
-                    print("time step: {} \n".format(i))
                 theta = r.integrate(r.t+self.step_size)
+                theta = theta % (2*np.pi) 
         
     def _coupling(self, theta): 
         return np.sin(theta) + self.gamma*(1-np.cos(theta))
@@ -75,8 +75,8 @@ class Kuramoto():
 
 class KuramotoNetwork(Kuramoto): 
 
-    def initialise(self, L, T, n_batches, network_matrix, seed=None): 
-        super().initialise(L, T, n_batches, seed=seed)
+    def initialise(self, L, T, n_frames, network_matrix, seed=None): 
+        super().initialise(L, T, dt, n_frames, seed=None)
         self.M = np.copy(network_matrix)
         self.M += np.eye(L, k=1) + np.eye(L, k=-1)
 
@@ -92,11 +92,24 @@ class KuramotoNetwork(Kuramoto):
     
 class Kuramoto2D(Kuramoto): 
     
-    def initialise(self, Lx, Ly, T, n_batches, seed=None, init=None): 
-        super().initialise(Lx*Ly, T, n_batches, seed=seed, init=init)
-        self.Lx = Lx 
-        self.Ly = Ly 
-        self.omegas = self.omegas.reshape((Lx, Ly))
+    def initialise(self, Lx, Ly, T, n_frames, seed=None, init=None): 
+        self.Lx = int(Lx)
+        self.Ly = int(Ly)
+        self.size = self.Lx*self.Ly 
+        self.T = T 
+        self.n_frames = int(n_frames)
+        self.step_size = T/float(n_frames)
+
+        if seed is None:
+            self.omegas = self.sigma*np.random.normal(size=(Lx, Ly)) + self.mean_omega
+        else: 
+            rs = RandomState(MT19937(SeedSequence(seed)))
+            self.omegas = self.sigma*rs.normal(size=(Lx, Ly)) + self.mean_omega 
+            
+        if init is not None: 
+            self.initial_state = init 
+        else: 
+            self.initial_state = np.zeros((Lx*Ly))
              
     def _det_rhs(self, theta): 
         theta = theta.reshape((self.Lx, self.Ly))
@@ -110,11 +123,7 @@ class Kuramoto2D(Kuramoto):
         if self.BC == "fixed": 
             rhs[0, :] = 0 
             rhs[-1, :] = 0
-            rhs[:, 0] = 0 
-            rhs[:, -1] = 0 
-        if self.BC == "open": 
-            rhs[0] = self.omegas[0]+self.epsilon*self._coupling(theta[1]-theta[0])
-            rhs[-1] = self.omegas[-1]+self.epsilon*self._coupling(theta[-2]-theta[-1])  
-            rhs[:, 0] = self.omegas[:, 0]+self.epsilon*self._coupling(theta[:, 1]-theta[:, 0])  
-            rhs[:, -1] = self.omegas[:, -1]+self.epsilon*self._coupling(theta[:, -2]-theta[:, -1])  
+        if self.BC == "grad": 
+            rhs[0] += self.epsilon*(self._coupling(-self.grad[0])-self._coupling(theta[-1]-theta[0]))
+            rhs[-1] += self.epsilon*(self._coupling(self.grad[1])-self._coupling(theta[0]-theta[1]))   
         return rhs.flatten()
