@@ -7,10 +7,10 @@ from tqdm import tqdm
 
 class Kuramoto():
     
-    def __init__(self, epsilon, gamma, sigma, mean_omega, BC="PBC", grad=None):
+    def __init__(self, epsilon, eta, sigma, mean_omega, BC="PBC", grad=None):
         # Initialises the class with the model parameters 
         self.epsilon = epsilon 
-        self.gamma = gamma 
+        self.eta = eta 
         self.sigma = sigma
         self.mean_omega = mean_omega 
         self.BC = BC
@@ -52,10 +52,10 @@ class Kuramoto():
                 theta = theta % (2*np.pi) 
         
     def _coupling(self, theta): 
-        return np.sin(theta) + self.gamma*(1-np.cos(theta))
+        return np.sin(theta) + self.eta*(1-np.cos(theta))
 
     def _coupling2(self, theta): 
-        return theta + self.gamma*theta**2/2
+        return theta + self.eta*theta**2/2
 
     def _apply_bc(self, rhs, theta): 
         if self.BC == "fixed": 
@@ -123,7 +123,11 @@ class Kuramoto2D(Kuramoto):
         if self.BC == "fixed": 
             rhs[0, :] = 0 
             rhs[-1, :] = 0
+            rhs[:, 0] = 0 
+            rhs[:, -1] = 0 
         if self.BC == "grad": 
-            rhs[0] += self.epsilon*(self._coupling(-self.grad[0])-self._coupling(theta[-1]-theta[0]))
-            rhs[-1] += self.epsilon*(self._coupling(self.grad[1])-self._coupling(theta[0]-theta[1]))   
+            rhs[0] = self.omegas[0] + self.epsilon*(self._coupling(-self.grad[0])+self._coupling(theta[1]-theta[0]))
+            rhs[-1] = self.omegas[-1] +self.epsilon*(self._coupling(self.grad[1])+self._coupling(theta[-2]-theta[-1])) 
+            rhs[:, 0] = self.omegas[:, 0] + self.epsilon*(self._coupling(-self.grad[2])+self._coupling(theta[:, 1]-theta[:, 0]))
+            rhs[:, -1] = self.omegas[:, -1] +self.epsilon*(self._coupling(self.grad[3])+self._coupling(theta[:, -2]-theta[:,-1])) 
         return rhs.flatten()
