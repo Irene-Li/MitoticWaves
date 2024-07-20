@@ -4,3 +4,6 @@
 .DS_Store
 Data/*
 movie.mp4
+/Figures
+/Tiffs
+*.mp4
