@@ -2,8 +2,10 @@
 .ipynb_checkpoints*
 *.pyc
 .DS_Store
-Data/*
-movie.mp4
+/Data
 /Figures
 /Tiffs
+/Movies
+/Sims
 *.mp4
+*.png
